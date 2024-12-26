@@ -1,15 +1,29 @@
 import curses
+import csv
+import logging
 
-tasks = ["Daily Quest 1aasdsas", "Daily Quest 2", "Random Reward"]
+logging.basicConfig(
+    filename='debug.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filemode="w",
+)
+tasks = ["Daily Quest 1", "Daily Quest 2", "Random Reward"]
 title = "lootboard"
 
 BOARD_PAD = 4
 
+with open("./user_files/tasks.csv") as csvfile:
+    reader = csv.reader(csvfile)
+    task_data = list(reader)
+    task_data.pop(0) # Remove the collumn headers
+tasks = [t[0] for t in task_data]
 
 def main(stdscr):
     curses.curs_set(0)  # Hide the cursor
     stdscr.clear()
     selected = 0
+
 
     while True:
         stdscr.clear()
