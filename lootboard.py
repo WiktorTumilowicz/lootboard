@@ -3,34 +3,49 @@ import csv
 import logging
 
 logging.basicConfig(
-    filename='debug.log',
+    filename="debug.log",
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="w",
 )
-tasks = ["Daily Quest 1", "Daily Quest 2", "Random Reward"]
 title = "lootboard"
 
 BOARD_PAD = 4
 
 with open("./user_files/tasks.csv") as csvfile:
     reader = csv.reader(csvfile)
-    task_data = list(reader)
-    task_data.pop(0) # Remove the collumn headers
-tasks = [t[0] for t in task_data]
+    tasks = list(reader)
+    tasks.pop(0)  # Remove the collumn headers
+
+
+def get_rarity_color(rarity):
+    if rarity == "common":
+        return curses.color_pair(0)
+    elif rarity == "uncommon":
+        return curses.color_pair(1)
+    elif rarity == "rare":
+        return curses.color_pair(2)
+    elif rarity == "mythic":
+        return curses.color_pair(3)
+    else:
+        raise Exception(f"unknown rarity: {rarity}")
+
 
 def main(stdscr):
     curses.curs_set(0)  # Hide the cursor
     stdscr.clear()
-    selected = 0
+    curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
+    selected = 0
 
     while True:
         stdscr.clear()
         height, width = stdscr.getmaxyx()
 
-        # Calculate the position to center the lootboard
-        max_task_length = max(len(task) for task in tasks)
+        # Calculate position to center the lootboard
+        max_task_length = max(len(t[0]) for t in tasks)
         board_width = max_task_length + BOARD_PAD
         board_height = len(tasks) + BOARD_PAD
         start_x = (width - board_width) // (BOARD_PAD // 2)
@@ -46,7 +61,8 @@ def main(stdscr):
 
         for i, task in enumerate(tasks):
             style = curses.A_REVERSE if i == selected else curses.A_NORMAL
-            stdscr.addstr(start_y + 2 + i, start_x + 2, task, style)
+            style = style | get_rarity_color(task[1])
+            stdscr.addstr(start_y + 2 + i, start_x + 2, task[0], style)
 
         stdscr.refresh()
 

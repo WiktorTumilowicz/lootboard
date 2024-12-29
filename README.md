@@ -10,6 +10,10 @@ Must complete at least one a day
 - Don't generalise, this is for your use case
 
 ## TODO:
+ - present 3 tasks per day, select via rarity
+ - implement task rerolls
+ - implement random rewards
+ - animate rewards
  - make files for each type of reward and read from files
  - Tests?
 
