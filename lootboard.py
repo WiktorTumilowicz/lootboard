@@ -1,6 +1,32 @@
 import curses
 import csv
 import logging
+import numpy as np
+
+from dataclasses import dataclass
+from enum import Enum
+from collections import Counter
+
+
+class Rarity(Enum):
+    COMMON = 0
+    RARE = 1
+    MYTHIC = 2
+
+
+RARITY_WEIGHTS = {
+    Rarity.COMMON: 70,
+    Rarity.RARE: 17,
+    Rarity.MYTHIC: 3,
+}
+
+
+@dataclass(frozen=True)
+class Task:
+    name: str
+    rarity: Rarity
+    recurring: bool
+
 
 logging.basicConfig(
     filename="debug.log",
@@ -8,27 +34,43 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="w",
 )
-title = "lootboard"
-
-BOARD_PAD = 4
-
-with open("./user_files/tasks.csv") as csvfile:
-    reader = csv.reader(csvfile)
-    tasks = list(reader)
-    tasks.pop(0)  # Remove the collumn headers
 
 
 def get_rarity_color(rarity):
-    if rarity == "common":
+    if rarity == Rarity.COMMON:
         return curses.color_pair(0)
-    elif rarity == "uncommon":
-        return curses.color_pair(1)
-    elif rarity == "rare":
+    elif rarity == Rarity.RARE:
         return curses.color_pair(2)
-    elif rarity == "mythic":
+    elif rarity == Rarity.MYTHIC:
         return curses.color_pair(3)
     else:
-        raise Exception(f"unknown rarity: {rarity}")
+        raise Exception(f"Unknown rarity: {rarity}")
+
+
+def weighted_select(tasks, num=3):
+    """Select unique task indices based on rarity weights adjusted by rarity count"""
+    rarity_counts = Counter(task.rarity for task in tasks)
+    adjusted_weights = np.array(
+        [RARITY_WEIGHTS[task.rarity] / rarity_counts[task.rarity] for task in tasks]
+    )
+    # faster to sum RARITY WEIGHTS using numpy
+    probabilities = adjusted_weights / adjusted_weights.sum()
+    selected_indices = np.random.choice(
+        len(tasks), size=num, replace=False, p=probabilities
+    )
+    return selected_indices.tolist()
+
+
+with open("./user_files/tasks.csv") as csvfile:
+    tasks = [
+        Task(
+            name=row[0],
+            rarity=Rarity[row[1].upper()],
+            recurring=row[2].lower() == "true",
+        )
+        for i, row in enumerate(csv.reader(csvfile))
+        if i > 0  # Skip header row
+    ]
 
 
 def main(stdscr):
@@ -39,13 +81,16 @@ def main(stdscr):
     curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
     selected = 0
+    task_indicies = weighted_select(tasks)
 
     while True:
         stdscr.clear()
         height, width = stdscr.getmaxyx()
+        title = "lootboard"
+        BOARD_PAD = 4
 
         # Calculate position to center the lootboard
-        max_task_length = max(len(t[0]) for t in tasks)
+        max_task_length = max(len(task.name) for task in tasks)
         board_width = max_task_length + BOARD_PAD
         board_height = len(tasks) + BOARD_PAD
         start_x = (width - board_width) // (BOARD_PAD // 2)
@@ -56,13 +101,14 @@ def main(stdscr):
             start_y,
             start_x + (board_width - len(title)) // 2,
             title,
-            curses.A_BOLD | curses.A_UNDERLINE,
+            curses.A_BOLD | curses.A_UNDERLINE | curses.color_pair(1),
         )
 
-        for i, task in enumerate(tasks):
-            style = curses.A_REVERSE if i == selected else curses.A_NORMAL
-            style = style | get_rarity_color(task[1])
-            stdscr.addstr(start_y + 2 + i, start_x + 2, task[0], style)
+        for j, idx in enumerate(task_indicies):
+            task = tasks[idx]
+            style = curses.A_REVERSE if j == selected else curses.A_NORMAL
+            style = style | get_rarity_color(task.rarity)
+            stdscr.addstr(start_y + 2 + j, start_x + 2, task.name, style)
 
         stdscr.refresh()
 
