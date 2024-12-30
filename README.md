@@ -10,7 +10,8 @@ Must complete at least one quest a day
 - Don't generalise, this is for your use case
 
 ## TODO:
- - task rerolls
+ - daily refresh
+ - task completion
  - random rewards
  - animate rewards
  - make files for each type of reward and read from files
