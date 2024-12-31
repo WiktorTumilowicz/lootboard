@@ -2,7 +2,10 @@ import curses
 import csv
 import logging
 import numpy as np
+import pickle
+import os
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from collections import Counter
 
@@ -27,6 +30,14 @@ class Task:
     recurring: bool
 
 
+@dataclass
+class State:
+    task_indicies: list[int]
+    reroll_available: bool
+    reroll_task_index: int
+    last_updated: datetime
+
+
 logging.basicConfig(
     filename="debug.log",
     level=logging.INFO,
@@ -46,6 +57,19 @@ def get_rarity_color(rarity):
         raise Exception(f"Unknown rarity: {rarity}")
 
 
+def new_state(tasks):
+    task_indicies = weighted_select(tasks)
+    reroll_task_index = task_indicies.pop()
+    state = State(
+        task_indicies=task_indicies,
+        reroll_available=True,
+        reroll_task_index=reroll_task_index,
+        last_updated=datetime.now(),
+    )
+    save_state(state)
+    return state
+
+
 def weighted_select(tasks, num=4):
     """Select unique task indices based on rarity weights adjusted by rarity count"""
     rarity_counts = Counter(task.rarity for task in tasks)
@@ -58,6 +82,27 @@ def weighted_select(tasks, num=4):
         len(tasks), size=num, replace=False, p=probabilities
     )
     return selected_indices.tolist()
+
+
+def save_state(state: State):
+    os.makedirs("data", exist_ok=True)
+    with open("data/state.pkl", "wb") as f:
+        pickle.dump(state, f)
+
+
+def load_state(tasks):
+    try:
+        with open("data/state.pkl", "rb") as f:
+            state = pickle.load(f)
+
+        # reset the board each day
+        if state.last_updated.date() != datetime.now().date():
+            return new_state(tasks)
+        return state
+
+    except (FileNotFoundError, pickle.UnpicklingError):
+        logging.info("state not found or invalid")
+        return new_state(tasks)
 
 
 with open("./user_files/tasks.csv") as csvfile:
@@ -82,22 +127,19 @@ def main(stdscr):
     REROLL = "↻  "
 
     selected = 0
-    reroll_available = True
-    task_indicies = weighted_select(tasks)
-    reroll_task = task_indicies.pop()
+    state: State = load_state(tasks)
 
     while True:
         stdscr.clear()
         height, width = stdscr.getmaxyx()
 
         PAD = 4
-        HALF_PAD = PAD // 2
         # Calculate position to center the lootboard
         max_task_length = max(len(task.name) for task in tasks)
         board_width = max_task_length + PAD
         board_height = len(tasks) + PAD
-        start_x = (width - board_width) // HALF_PAD
-        start_y = (height - board_height) // HALF_PAD
+        start_x = (width - board_width) // 2
+        start_y = (height - board_height) // 2
 
         # Draw title
         stdscr.addstr(
@@ -108,23 +150,23 @@ def main(stdscr):
         )
 
         # Draw tasks
-        for j, idx in enumerate(task_indicies):
+        for j, idx in enumerate(state.task_indicies):
             task = tasks[idx]
             style = curses.A_REVERSE if j == selected else curses.A_NORMAL
             style = style | get_rarity_color(task.rarity)
             stdscr.addstr(
-                start_y + HALF_PAD + j,
-                start_x + HALF_PAD + len(REROLL),
+                start_y + 2 + j,
+                start_x + 2 + len(REROLL),
                 task.name,
                 style,
             )
 
         # Draw rerolls
-        if reroll_available:
-            for j in range(len(task_indicies)):
+        if state.reroll_available:
+            for j in range(len(state.task_indicies)):
                 task = tasks[idx]
                 style = curses.A_NORMAL | curses.color_pair(1)
-                stdscr.addstr(start_y + HALF_PAD + j, start_x + HALF_PAD, REROLL, style)
+                stdscr.addstr(start_y + 2 + j, start_x + 2, REROLL, style)
 
         stdscr.refresh()
 
@@ -132,11 +174,15 @@ def main(stdscr):
         key = stdscr.getch()
         if key in [curses.KEY_UP, ord("k")] and selected > 0:
             selected -= 1
-        elif key in [curses.KEY_DOWN, ord("j")] and selected < len(task_indicies) - 1:
+        elif (
+            key in [curses.KEY_DOWN, ord("j")]
+            and selected < len(state.task_indicies) - 1
+        ):
             selected += 1
-        elif key == ord("r") and reroll_available:
-            reroll_available = False
-            task_indicies[selected] = reroll_task
+        elif key == ord("r") and state.reroll_available:
+            state.reroll_available = False
+            state.task_indicies[selected] = state.reroll_task_index
+            save_state(state)
         elif key == ord("q"):
             break
 

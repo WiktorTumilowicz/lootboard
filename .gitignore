@@ -1,3 +1,4 @@
-user_files/*
+user_files/
+data/
 __pycache__/
 debug.log
