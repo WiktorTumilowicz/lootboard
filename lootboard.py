@@ -1,13 +1,23 @@
 import curses
-import csv
 import logging
 import numpy as np
 import pickle
 import os
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from collections import Counter
+
+DB_FILE = "./data/lootboard.db"
+STATE_FILE = "./data/state.pkl"
+
+logging.basicConfig(
+    filename="debug.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filemode="w",
+)
 
 
 class Rarity(Enum):
@@ -25,6 +35,7 @@ RARITY_WEIGHTS = {
 
 @dataclass(frozen=True)
 class Task:
+    id: int
     name: str
     rarity: Rarity
     recurring: bool
@@ -35,15 +46,7 @@ class State:
     task_indicies: list[int]
     reroll_available: bool
     reroll_task_index: int
-    last_updated: datetime
-
-
-logging.basicConfig(
-    filename="debug.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    filemode="w",
-)
+    time_created: datetime
 
 
 def get_rarity_color(rarity):
@@ -55,19 +58,6 @@ def get_rarity_color(rarity):
         return curses.color_pair(3)
     else:
         raise Exception(f"Unknown rarity: {rarity}")
-
-
-def new_state(tasks):
-    task_indicies = weighted_select(tasks)
-    reroll_task_index = task_indicies.pop()
-    state = State(
-        task_indicies=task_indicies,
-        reroll_available=True,
-        reroll_task_index=reroll_task_index,
-        last_updated=datetime.now(),
-    )
-    save_state(state)
-    return state
 
 
 def weighted_select(tasks, num=4):
@@ -84,19 +74,35 @@ def weighted_select(tasks, num=4):
     return selected_indices.tolist()
 
 
+def new_state(tasks):
+    task_indicies = weighted_select(tasks)
+    reroll_task_index = task_indicies.pop()
+    state = State(
+        task_indicies=task_indicies,
+        reroll_available=True,
+        reroll_task_index=reroll_task_index,
+        time_created=datetime.now(),
+    )
+    save_state(state)
+    return state
+
+
 def save_state(state: State):
     os.makedirs("data", exist_ok=True)
-    with open("data/state.pkl", "wb") as f:
+    with open(STATE_FILE, "wb") as f:
         pickle.dump(state, f)
 
 
 def load_state(tasks):
     try:
-        with open("data/state.pkl", "rb") as f:
+        with open(STATE_FILE, "rb") as f:
             state = pickle.load(f)
 
+        if not isinstance(state, State):
+            raise ValueError("Unpickled object is not an instance of State.")
+
         # reset the board each day
-        if state.last_updated.date() != datetime.now().date():
+        if state.time_created.date() != datetime.now().date():
             return new_state(tasks)
         return state
 
@@ -105,15 +111,34 @@ def load_state(tasks):
         return new_state(tasks)
 
 
-with open("./user_files/tasks.csv") as csvfile:
+def initialize_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            recurring BOOLEAN NOT NULL,
+            UNIQUE(name, rarity)
+        )
+        """)
+
+
+initialize_db()
+
+
+with sqlite3.connect(DB_FILE) as conn:
+    cursor = conn.cursor()
+    cursor.execute("SELECT task_id, name, rarity, recurring FROM tasks")
+    rows = cursor.fetchall()
     tasks = [
         Task(
-            name=row[0],
-            rarity=Rarity[row[1].upper()],
-            recurring=row[2].lower() == "true",
+            id=row[0],
+            name=row[1],
+            rarity=Rarity[row[2].upper()],
+            recurring=bool(row[3]),
         )
-        for i, row in enumerate(csv.reader(csvfile))
-        if i > 0  # Skip header row
+        for row in rows
     ]
 
 
