@@ -6,12 +6,11 @@ Must complete at least one quest a day
 
 ## TODO:
  - adding tasks
- - task completion
- - storing completed tasks
 
+ - displaying help
  - random rewards
  - animate rewards
- - make files for rewards
+ - displaying completed tasks
  - min height and width issues
 
  - Tests?
