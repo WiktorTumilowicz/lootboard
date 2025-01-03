@@ -7,7 +7,6 @@ Must complete at least one quest a day
 ## TODO:
  - adding tasks
 
- - displaying help
  - random rewards
  - animate rewards
  - displaying completed tasks

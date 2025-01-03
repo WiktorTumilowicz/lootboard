@@ -143,21 +143,19 @@ def initialize_db():
 # on complete, delete if not recurring and write to completed tasks
 
 
-initialize_db()
-
-
-with sqlite3.connect(DB_FILE) as conn:
-    cursor = conn.cursor()
-    cursor.execute("SELECT task_id, name, rarity, recurring FROM tasks")
-    rows = cursor.fetchall()
-    tasks = {
-        row[0]: Task(
-            name=row[1],
-            rarity=Rarity[row[2].upper()],
-            recurring=bool(row[3]),
-        )
-        for row in rows
-    }
+def load_tasks():
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT task_id, name, rarity, recurring FROM tasks")
+        rows = cursor.fetchall()
+        return {
+            row[0]: Task(
+                name=row[1],
+                rarity=Rarity[row[2].upper()],
+                recurring=bool(row[3]),
+            )
+            for row in rows
+        }
 
 
 def complete_task(id: str, tasks: dict[str, Task]):
@@ -180,17 +178,21 @@ def complete_task(id: str, tasks: dict[str, Task]):
         del tasks[id]
 
 
-def main(stdscr):
-    curses.curs_set(0)  # Hide the cursor
-    stdscr.clear()
-    curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)
-    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
+def render_bottom_line(stdscr, prompt):
+    """Displays a prompt at the bottom of the screen"""
+    height, width = stdscr.getmaxyx()
+    padded_prompt = prompt.ljust(width)
+
+    # Probably some backwards compatibility garbage
+    try:
+        stdscr.addstr(height - 1, 0, padded_prompt, curses.A_REVERSE)
+    except curses.error:
+        pass
+
+def main_screen(stdscr, state: State, tasks: dict[str, Task]):
     TITLE = "lootboard"
     REROLL = "↻  "
-
     selected = 0
-    state: State = load_state(tasks)
 
     while True:
         stdscr.clear()
@@ -230,16 +232,17 @@ def main(stdscr):
 
         # Draw rerolls
         if state.reroll_available:
-            for j, (id,is_complete) in enumerate(state.active_tasks):
+            for j, (id, is_complete) in enumerate(state.active_tasks):
                 if is_complete:  # if complete
                     continue
                 task = tasks[id]
                 style = curses.A_NORMAL | curses.color_pair(3)
                 stdscr.addstr(start_y + 2 + j, start_x + 2, REROLL, style)
 
+        render_bottom_line(stdscr, "'?' help | 'q' quit")
+
         stdscr.refresh()
 
-        # Handle input
         key = stdscr.getch()
         if key in [curses.KEY_UP, ord("k")] and selected > 0:
             selected -= 1
@@ -261,7 +264,8 @@ def main(stdscr):
                 state.active_tasks[selected] = (None, True)
                 save_state(state)
                 complete_task(task_id, tasks)
-
+        elif key == ord("?"):
+            help_screen(stdscr)
         elif key == ord("x"):
             # FOR DEBUGGING PURPOSES
             state = new_state(tasks)
@@ -269,5 +273,43 @@ def main(stdscr):
             break
 
 
+def help_screen(stdscr):
+    instructions = [
+        "Help Menu",
+        "",
+        "Navigate: Arrow keys or 'j/k'",
+        "Complete Task: Enter",
+        "Reroll Task: 'r'",
+        "Quit: 'q'",
+    ]
+
+    while True:
+        stdscr.clear()
+        height, width = stdscr.getmaxyx()
+        for i, line in enumerate(instructions):
+            x = (width - len(line)) // 2
+            y = height // 2 - len(instructions) // 2 + i
+            stdscr.addstr(y, x, line, curses.A_BOLD if i == 0 else curses.A_NORMAL)
+        render_bottom_line(stdscr, "'q' go back")
+        stdscr.refresh()
+
+        key = stdscr.getch()
+        if key == ord("q"):
+            return
+
+
+def main(stdscr):
+    curses.curs_set(0)  # Hide the cursor
+    curses.init_pair(1, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
+
+    tasks = load_tasks()  # Implement load_tasks()!
+    state = load_state(tasks)  # Implement load_state()!
+
+    main_screen(stdscr, state, tasks)
+
+
 if __name__ == "__main__":
+    initialize_db()
     curses.wrapper(main)
